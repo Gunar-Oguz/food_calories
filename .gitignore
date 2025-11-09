@@ -1,0 +1,24 @@
+# Python cache and bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments (if you ever create one)
+venv/
+.env/
+
+# macOS system files
+.DS_Store
+
+# Local or test scripts
+local.sh
+
+# pytest cache and reports
+.pytest_cache/
+*.pytest_cache/
+
+# VS Code workspace settings (optional but safe)
+.vscode/
+
+# Logs or temporary files
+*.log

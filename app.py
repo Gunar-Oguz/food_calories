@@ -95,5 +95,5 @@ with st.spinner(f"Fetching data from {api_choice}..."):
         st.success("✅ Loaded country data and computed sample Nutrition Index")
         st.bar_chart(df.head(20).set_index("Country")["Nutrition Index"])
 
-st.markdown("---")
+st.markdown("----")
 st.caption(f"🕒 Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | All APIs are public, no signup required.")

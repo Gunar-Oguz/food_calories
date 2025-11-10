@@ -99,5 +99,4 @@ def main():
     st.markdown("----")
     st.caption(f"🕒 Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | All APIs are public, no signup required.")
 
-if __name__ == "__main__":
-    main()
+main()

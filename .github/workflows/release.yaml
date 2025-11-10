@@ -94,34 +94,41 @@ jobs:
 
       - name: Deploy to App Runner
         run: |
-          aws apprunner create-service \
-            --service-name food_calories_app \
-            --source-configuration '{
-              "ImageRepository": {
-                "ImageIdentifier": "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/food_calories:latest",
-                "ImageRepositoryType": "ECR",
-                "ImageConfiguration": { "Port": "8501" }
-              },
-              "AutoDeploymentsEnabled": true,
-              "AuthenticationConfiguration": { "AccessRoleArn": "${{ secrets.APPRUNNER_ROLE_ARN }}" }
-            }' \
-            --instance-configuration '{ "Cpu": "1 vCPU", "Memory": "2 GB" }' \
-            --health-check-configuration '{
-              "Protocol": "HTTP",
-              "Path": "/_stcore/health",
-              "Interval": 10,
-              "Timeout": 5,
-              "HealthyThreshold": 1,
-              "UnhealthyThreshold": 5
-            }' \
-          || aws apprunner update-service \
-            --service-arn $(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='food_calories_app'].ServiceArn" --output text) \
-            --source-configuration '{
-              "ImageRepository": {
-                "ImageIdentifier": "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/food_calories:latest",
-                "ImageRepositoryType": "ECR",
-                "ImageConfiguration": { "Port": "8501" }
-              },
-              "AutoDeploymentsEnabled": true,
-              "AuthenticationConfiguration": { "AccessRoleArn": "${{ secrets.APPRUNNER_ROLE_ARN }}" }
-            }'
+          SERVICE_ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ServiceName=='food_calories_app'].ServiceArn" --output text)
+          
+          if [ -z "$SERVICE_ARN" ]; then
+            echo "Service not found, creating new service..."
+            aws apprunner create-service \
+              --service-name food_calories_app \
+              --source-configuration '{
+                "ImageRepository": {
+                  "ImageIdentifier": "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/food_calories:latest",
+                  "ImageRepositoryType": "ECR",
+                  "ImageConfiguration": { "Port": "8501" }
+                },
+                "AutoDeploymentsEnabled": true,
+                "AuthenticationConfiguration": { "AccessRoleArn": "${{ secrets.APPRUNNER_ROLE_ARN }}" }
+              }' \
+              --instance-configuration '{ "Cpu": "1 vCPU", "Memory": "2 GB" }' \
+              --health-check-configuration '{
+                "Protocol": "HTTP",
+                "Path": "/_stcore/health",
+                "Interval": 10,
+                "Timeout": 5,
+                "HealthyThreshold": 1,
+                "UnhealthyThreshold": 5
+              }'
+          else
+            echo "Service found, updating service..."
+            aws apprunner update-service \
+              --service-arn $SERVICE_ARN \
+              --source-configuration '{
+                "ImageRepository": {
+                  "ImageIdentifier": "${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/food_calories:latest",
+                  "ImageRepositoryType": "ECR",
+                  "ImageConfiguration": { "Port": "8501" }
+                },
+                "AutoDeploymentsEnabled": true,
+                "AuthenticationConfiguration": { "AccessRoleArn": "${{ secrets.APPRUNNER_ROLE_ARN }}" }
+              }'
+          fi

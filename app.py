@@ -1,3 +1,4 @@
+from health_check import start_health_server
 import streamlit as st
 import pandas as pd
 import requests
@@ -24,6 +25,7 @@ def get_country_data():
     return r.json()
 
 def main():
+    start_health_server()
     st.set_page_config(page_title="🥗 Nutrition & Food Insights", page_icon="🥗", layout="wide")
     st.title("🥗 Nutrition & Food Insights Dashboard")
     st.markdown("Learning automation & deployment using public, free APIs (no keys needed).")

@@ -112,7 +112,6 @@ jobs:
               --instance-configuration '{ "Cpu": "1 vCPU", "Memory": "2 GB" }' \
               --health-check-configuration '{
                 "Protocol": "TCP",
-                "Port": "8501",
                 "Interval": 10,
                 "Timeout": 5,
                 "HealthyThreshold": 1,
@@ -133,7 +132,6 @@ jobs:
               }' \
               --health-check-configuration '{
                 "Protocol": "TCP",
-                "Port": "8501",
                 "Interval": 10,
                 "Timeout": 5,
                 "HealthyThreshold": 1,

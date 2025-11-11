@@ -89,4 +89,11 @@ jobs:
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secret
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 201409139400.dkr.ecr.us-east-1.amazonaws.com
+            docker pull 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest
+            docker stop streamlit-app || true
+            docker rm streamlit-app || true
+            docker run -d -p 8501:8501 --name streamlit-app --restart unless-stopped 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest

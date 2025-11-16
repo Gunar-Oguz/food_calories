@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
 import requests
+import boto3
+import io
 from datetime import datetime
 
-st.set_page_config(page_title="�� Nutrition & Food Insights", page_icon="🥗", layout="wide")
+st.set_page_config(page_title="🥗 Nutrition & Food Insights", page_icon="🥗", layout="wide")
 st.title("🥗 Nutrition & Food Insights Dashboard")
-st.markdown("Learning automation & deployment using public, free APIs (no keys needed).")
+st.markdown("Learning automation & deployment using S3 processed data and public APIs.")
 
 # Sidebar
 st.sidebar.header("⚙️ Controls")
@@ -18,15 +20,25 @@ if st.sidebar.button("🔄 Refresh", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
 
-st.sidebar.markdown("✅ No API key needed")
+st.sidebar.markdown("✅ Data from S3 (Processed)")
 
 # --- API FUNCTIONS ---
 @st.cache_data(ttl=300)
 def get_food_data(query="apple"):
-    url = f"https://world.openfoodfacts.org/cgi/search.pl?search_terms={query}&json=true&page_size=50"
-    r = requests.get(url, timeout=30)
-    r.raise_for_status()
-    return r.json()["products"]
+    """Read processed food data from S3"""
+    try:
+        # Download from S3
+        s3 = boto3.client('s3')
+        obj = s3.get_object(Bucket='food-etl-bucket-gulnar', Key='write/processed_data.parquet')
+        df = pd.read_parquet(io.BytesIO(obj['Body'].read()))
+        
+        # Filter by search term
+        df_filtered = df[df['product_name'].str.contains(query, case=False, na=False)]
+        
+        return df_filtered
+    except Exception as e:
+        st.error(f"Error reading from S3: {e}")
+        return pd.DataFrame()
 
 @st.cache_data(ttl=300)
 def get_air_quality():
@@ -43,25 +55,30 @@ def get_country_data():
 # --- MAIN CONTENT ---
 with st.spinner(f"Fetching data from {api_choice}..."):
 
-    # 1️⃣ Open Food Facts
+    # 1️⃣ Open Food Facts (FROM S3!)
     if api_choice.startswith("🍎"):
         search = st.text_input("Enter a food name:", "banana")
-        data = get_food_data(search)
-        if not data:
+        df = get_food_data(search)
+        
+        if df.empty:
             st.warning("No data found.")
         else:
-            df = pd.DataFrame([{
-                "Product": i.get("product_name", "N/A"),
-                "Brand": i.get("brands", "N/A"),
-                "Calories (kcal)": i.get("nutriments", {}).get("energy-kcal_100g"),
-                "Fat (g)": i.get("nutriments", {}).get("fat_100g"),
-                "Sugar (g)": i.get("nutriments", {}).get("sugars_100g"),
-                "Proteins (g)": i.get("nutriments", {}).get("proteins_100g")
-            } for i in data if "nutriments" in i])
-            st.success(f"✅ Found {len(df)} products for '{search}'")
-            st.dataframe(df.head(10), use_container_width=True, height=400)
+            # Rename columns to match display
+            df_display = df.rename(columns={
+                'product_name': 'Product',
+                'brands': 'Brand',
+                'calories': 'Calories (kcal)',
+                'fat': 'Fat (g)',
+                'sugar': 'Sugar (g)',
+                'protein': 'Proteins (g)',
+                'calories_per_gram': 'Cal/gram'
+            })
+            
+            st.success(f"✅ Found {len(df_display)} products for '{search}' (from S3 processed data)")
+            st.dataframe(df_display[['Product', 'Brand', 'Calories (kcal)', 'Fat (g)', 'Sugar (g)', 'Proteins (g)', 'Cal/gram']].head(10), 
+                        use_container_width=True, height=400)
 
-            df_clean = df.dropna(subset=["Calories (kcal)"])
+            df_clean = df_display.dropna(subset=["Calories (kcal)"])
             if not df_clean.empty:
                 st.subheader("📊 Basic Nutrition Stats")
                 st.metric("Avg Calories", f"{df_clean['Calories (kcal)'].mean():.0f} kcal")
@@ -95,4 +112,4 @@ with st.spinner(f"Fetching data from {api_choice}..."):
         st.bar_chart(df.head(20).set_index("Country")["Nutrition Index"])
 
 st.markdown("----")
-st.caption(f"🕒 Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | All APIs are public, no signup required.")
+st.caption(f"🕒 Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Food data from S3, other APIs public")

@@ -87,13 +87,17 @@ jobs:
     steps:
       - name: Deploy to EC2
         uses: appleboy/ssh-action@master
+        env:
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: AWS_ACCESS_KEY,AWS_SECRET_KEY
           script: |
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 201409139400.dkr.ecr.us-east-1.amazonaws.com
             docker pull 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest
             docker stop streamlit-app || true
             docker rm streamlit-app || true
-            docker run -d -p 8501:8501 --name streamlit-app --restart unless-stopped 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest
+            docker run -d -p 8501:8501 -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY -e AWS_DEFAULT_REGION=us-east-1 --name streamlit-app --restart unless-stopped 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest 

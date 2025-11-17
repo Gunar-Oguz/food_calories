@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Complete CI/CD Pipeline - All Containers
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+# ============================================
+# JOB 1: TEST (Runs Once for All)
+# ============================================
 jobs:
   test:
     name: Run Tests
@@ -27,8 +30,12 @@ jobs:
         run: |
           pytest
 
-  docker-push:
-    name: Build and Push to Docker Hub
+# ============================================
+# DOCKER HUB: Push All 3 Images
+# ============================================
+
+  docker-push-app:
+    name: Build & Push Main App to Docker Hub
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -42,16 +49,66 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build Docker image
+      - name: Build Docker image (Main App)
         run: |
-          docker build -t ${{ secrets.DOCKER_USERNAME }}/food_calories:latest .
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/food_calories:latest -f Dockerfile .
 
       - name: Push to Docker Hub
         run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/food_calories:latest
 
-  push-to-ecr:
-    name: Build and Push to AWS ECR
+  docker-push-etl:
+    name: Build & Push ETL to Docker Hub
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image (ETL)
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/food_calories_etl:latest -f Dockerfile.etl .
+
+      - name: Push to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/food_calories_etl:latest
+
+  docker-push-fetch:
+    name: Build & Push Fetch to Docker Hub
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image (Fetch)
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/food_calories_fetch:latest -f Dockerfile.fetch .
+
+      - name: Push to Docker Hub
+        run: |
+          docker push ${{ secrets.DOCKER_USERNAME }}/food_calories_fetch:latest
+
+# ============================================
+# AWS ECR: Push All 3 Images
+# ============================================
+
+  push-app-to-ecr:
+    name: Build & Push Main App to AWS ECR
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -70,19 +127,81 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image to ECR
+      - name: Build and push Docker image to ECR (Main App)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: food_calories
           IMAGE_TAG: latest
         run: |
-          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-  deploy-to-ec2:
-    name: Deploy to EC2
+  push-etl-to-ecr:
+    name: Build & Push ETL to AWS ECR
     runs-on: ubuntu-latest
-    needs: push-to-ecr
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image to ECR (ETL)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: food_calories_etl
+          IMAGE_TAG: latest
+        run: |
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.etl .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  push-fetch-to-ecr:
+    name: Build & Push Fetch to AWS ECR
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image to ECR (Fetch)
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: food_calories_fetch
+          IMAGE_TAG: latest
+        run: |
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.fetch .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+# ============================================
+# DEPLOYMENT: Deploy Main App to EC2
+# ============================================
+
+  deploy-to-ec2:
+    name: Deploy Main App to EC2
+    runs-on: ubuntu-latest
+    needs: push-app-to-ecr  # Only needs the main app to be pushed
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Deploy to EC2
@@ -96,8 +215,21 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: AWS_ACCESS_KEY,AWS_SECRET_KEY
           script: |
+            # Login to ECR
             aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 201409139400.dkr.ecr.us-east-1.amazonaws.com
+            
+            # Pull latest main app image
             docker pull 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest
+            
+            # Stop and remove old container
             docker stop streamlit-app || true
             docker rm streamlit-app || true
-            docker run -d -p 8501:8501 -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY -e AWS_DEFAULT_REGION=us-east-1 --name streamlit-app --restart unless-stopped 201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest 
+            
+            # Run new container
+            docker run -d -p 8501:8501 \
+              -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY \
+              -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_KEY \
+              -e AWS_DEFAULT_REGION=us-east-1 \
+              --name streamlit-app \
+              --restart unless-stopped \
+              201409139400.dkr.ecr.us-east-1.amazonaws.com/food_calories:latest

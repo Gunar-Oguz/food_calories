@@ -22,3 +22,4 @@ local.sh
 
 # Logs or temporary files
 *.log
+*.pem

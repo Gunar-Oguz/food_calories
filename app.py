@@ -1,18 +1,13 @@
 """Streamlit dashboard that searches the processed food data.
 
-Data comes from S3 by default. Set DATA_PATH to a local parquet file to run without AWS:
-    DATA_PATH=data/sample_processed.parquet streamlit run app.py
+Reads data/write/processed_data.parquet, or S3 when S3_BUCKET is set (see storage.py).
 """
-import io
-import os
 from datetime import datetime
 
-import boto3
 import pandas as pd
 import streamlit as st
 
-BUCKET = os.getenv("S3_BUCKET", "food-etl-bucket-gulnar")
-PROCESSED_KEY = "write/processed_data.parquet"
+import storage
 
 COLUMN_NAMES = {
     "product_name": "Product",
@@ -28,12 +23,8 @@ NUTRIENTS = ["Calories (kcal)", "Fat (g)", "Sugar (g)", "Proteins (g)"]
 
 @st.cache_data(ttl=300)
 def load_processed_data():
-    """Read the processed dataset from a local file (DATA_PATH) or from S3."""
-    local_path = os.getenv("DATA_PATH")
-    if local_path:
-        return pd.read_parquet(local_path)
-    obj = boto3.client("s3").get_object(Bucket=BUCKET, Key=PROCESSED_KEY)
-    return pd.read_parquet(io.BytesIO(obj["Body"].read()))
+    """Cached for 5 minutes so every search does not re-read the file."""
+    return storage.read_parquet(storage.PROCESSED_KEY)
 
 
 def search_foods(df, query):
@@ -52,15 +43,14 @@ def get_food_data(query="apple"):
 def main():
     st.set_page_config(page_title="Food Calories Dashboard", page_icon="🥗", layout="wide")
     st.title("🥗 Food Calories & Nutrition Dashboard")
-    st.markdown("A small data pipeline: OpenFoodFacts API → AWS S3 → ETL → Streamlit")
+    st.markdown("A small data pipeline: OpenFoodFacts API → fetch → ETL → this dashboard, refreshed daily.")
 
     st.sidebar.header("⚙️ Controls")
     if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     st.sidebar.markdown("---")
-    source = f"local file `{os.getenv('DATA_PATH')}`" if os.getenv("DATA_PATH") else f"`s3://{BUCKET}`"
-    st.sidebar.markdown(f"**Data source:** {source}")
+    st.sidebar.markdown(f"**Data source:** `{storage.describe(storage.PROCESSED_KEY)}`")
     st.sidebar.markdown("**Origin:** OpenFoodFacts API")
 
     search = st.text_input("Enter a food name:", "banana")
@@ -79,7 +69,8 @@ def main():
         col2.metric("Avg Fat", f"{df['Fat (g)'].mean():.1f} g")
         col3.metric("Avg Sugar", f"{df['Sugar (g)'].mean():.1f} g")
         col4.metric("Avg Protein", f"{df['Proteins (g)'].mean():.1f} g")
-        st.bar_chart(df[NUTRIENTS].mean())
+        st.markdown("**Average grams per 100 g**")
+        st.bar_chart(df[["Fat (g)", "Sugar (g)", "Proteins (g)"]].mean(), horizontal=True)
 
     st.markdown("---")
     st.caption(f"🕒 Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")

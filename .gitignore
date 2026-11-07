@@ -12,9 +12,9 @@ venv/
 .env
 *.pem
 
-# Generated data (the pipeline writes these to S3, not to git)
+# Stray parquet files; the pipeline's own output lives in data/ and is committed by the daily job
 *.parquet
-!data/sample_processed.parquet
+!data/**/*.parquet
 
 # OS / editor
 .DS_Store

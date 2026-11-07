@@ -9,13 +9,15 @@ from moto import mock_aws
 import app
 import etl_job
 import fetch_data
+import storage
 
 BUCKET = "food-etl-bucket-gulnar"
 
 
 @pytest.fixture
-def s3():
+def s3(monkeypatch):
     """A fake S3 (moto) with the project bucket, so tests never touch real AWS."""
+    monkeypatch.setenv("S3_BUCKET", BUCKET)
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")
         client.create_bucket(Bucket=BUCKET)
@@ -28,7 +30,7 @@ def fake_aws_credentials(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
-    monkeypatch.delenv("DATA_PATH", raising=False)
+    monkeypatch.delenv("S3_BUCKET", raising=False)
 
 
 def put_parquet(client, key, df):
@@ -59,7 +61,7 @@ def test_parse_products_handles_missing_fields():
     assert rows[1]["product_name"] == "Unknown" and rows[1]["brands"] == "Unknown"
 
 
-def test_fetch_converts_nutrients_to_numbers(monkeypatch):
+def test_fetch_converts_nutrients_to_numbers():
     class FakeResponse:
         def raise_for_status(self):
             pass
@@ -67,10 +69,38 @@ def test_fetch_converts_nutrients_to_numbers(monkeypatch):
         def json(self):
             return {"products": [{"product_name": "Bread", "nutriments": {"energy-kcal_100g": "265", "fat_100g": "n/a"}}]}
 
-    monkeypatch.setattr(fetch_data.requests, "get", lambda *a, **k: FakeResponse())
-    df = fetch_data.fetch_food_data(foods=["bread"])
+    class FakeSession:
+        def get(self, *args, **kwargs):
+            return FakeResponse()
+
+    df = fetch_data.fetch_food_data(foods=["bread"], session=FakeSession(), pause=0)
     assert df.loc[0, "calories"] == 265.0
     assert pd.isna(df.loc[0, "fat"])
+
+
+class FlakySession:
+    """Fails for the foods it is told to fail, answers normally for the rest."""
+
+    def __init__(self, bad):
+        self.bad = bad
+
+    def get(self, url, params, timeout):
+        if params["search_terms"] in self.bad:
+            raise fetch_data.requests.ConnectionError("503")
+        response = type("R", (), {})()
+        response.raise_for_status = lambda: None
+        response.json = lambda: {"products": [{"product_name": params["search_terms"], "nutriments": {}}]}
+        return response
+
+
+def test_fetch_skips_a_failing_food_and_keeps_the_rest():
+    df = fetch_data.fetch_food_data(foods=["rice", "bread"], session=FlakySession({"rice"}), pause=0)
+    assert list(df["product_name"]) == ["bread"]
+
+
+def test_fetch_raises_when_every_search_fails():
+    with pytest.raises(RuntimeError):
+        fetch_data.fetch_food_data(foods=["rice", "bread"], session=FlakySession({"rice", "bread"}), pause=0)
 
 
 # ---------- transform ----------
@@ -87,14 +117,23 @@ def test_transform_does_not_change_its_input():
     assert "calories_per_gram" not in raw.columns
 
 
-# ---------- full pipeline on fake S3 ----------
+# ---------- full pipeline ----------
 
-def test_pipeline_end_to_end(s3):
-    put_parquet(s3, etl_job.RAW_KEY, raw_products())
+def test_pipeline_end_to_end_on_s3(s3):
+    put_parquet(s3, storage.RAW_KEY, raw_products())
     etl_job.main()
     result = app.get_food_data("apple")
     assert len(result) == 1
     assert result.iloc[0]["calories_per_gram"] == pytest.approx(2.37)
+
+
+def test_pipeline_end_to_end_on_local_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage, "LOCAL_DIR", tmp_path)
+    storage.write_parquet(raw_products(), storage.RAW_KEY)
+    etl_job.main()
+    assert (tmp_path / "write" / "processed_data.parquet").exists()
+    st.cache_data.clear()
+    assert len(app.get_food_data("banana")) == 1
 
 
 # ---------- app ----------
@@ -105,8 +144,7 @@ def test_search_is_case_insensitive_and_safe_with_symbols():
     assert len(app.search_foods(df, "(white")) == 1  # would raise if treated as a regex
 
 
-def test_app_reads_local_file_without_aws(monkeypatch):
-    monkeypatch.setenv("DATA_PATH", "data/sample_processed.parquet")
+def test_app_reads_committed_data_without_aws():
     st.cache_data.clear()
     result = app.get_food_data("banana")
     assert not result.empty

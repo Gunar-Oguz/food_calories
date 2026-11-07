@@ -1,0 +1,40 @@
+name: Daily data refresh
+
+# Runs the pipeline every day without AWS: fetch from the API, run the ETL, and commit the new
+# data/ files. The live Streamlit app redeploys from the repo, so it always shows the latest data.
+on:
+  schedule:
+    - cron: "0 10 * * *" # 10:00 UTC every day
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: refresh-data
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Fetch
+        run: python fetch_data.py
+      - name: Transform
+        run: python etl_job.py
+      - name: Commit new data if it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No change in data."
+          else
+            git commit -m "data: daily refresh $(date -u +%F)"
+            git push
+          fi

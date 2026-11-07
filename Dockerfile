@@ -1,13 +1,17 @@
+# Streamlit dashboard
 FROM python:3.11-slim
 
 WORKDIR /app
-
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY app.py .
+COPY data/ data/
 
-EXPOSE 8501 8080
+# Don't run as root inside the container
+RUN useradd --create-home appuser
+USER appuser
 
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true", "--server.enableCORS=false", "--server.enableXsrfProtection=false"]
+EXPOSE 8501
+HEALTHCHECK CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]

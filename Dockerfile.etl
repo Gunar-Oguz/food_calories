@@ -1,17 +1,13 @@
-# Use official Python runtime as base image
+# Batch job: etl_job.py (runs once and exits; scheduled by cron on EC2)
 FROM python:3.11-slim
 
-# Set working directory inside container
 WORKDIR /app
-
-# Copy requirements file
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy ETL script
 COPY etl_job.py .
 
-# Run ETL job when container starts
+RUN useradd --create-home appuser
+USER appuser
+
 CMD ["python", "etl_job.py"]

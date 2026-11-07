@@ -54,10 +54,13 @@ def raw_products():
 
 def test_parse_products_handles_missing_fields():
     rows = fetch_data.parse_products([
-        {"product_name": "Rice", "brands": "Uncle Ben", "nutriments": {"energy-kcal_100g": 130}},
+        {"code": "42", "product_name": "Rice", "brands": "Uncle Ben", "nutriscore_grade": "b", "nova_group": 1,
+         "nutriments": {"energy-kcal_100g": 130, "fiber_100g": 0.4, "vitamin-c_100g": 0.001}},
         {"product_name": "", "nutriments": {}},
-    ])
+    ], category="rice", food_group="Grains")
     assert rows[0]["calories"] == 130 and rows[0]["fat"] is None
+    assert rows[0]["fiber"] == 0.4 and rows[0]["vitamin_c"] == 0.001
+    assert rows[0]["category"] == "rice" and rows[0]["food_group"] == "Grains" and rows[0]["nutriscore"] == "b"
     assert rows[1]["product_name"] == "Unknown" and rows[1]["brands"] == "Unknown"
 
 
@@ -98,6 +101,13 @@ def test_fetch_skips_a_failing_food_and_keeps_the_rest():
     assert list(df["product_name"]) == ["bread"]
 
 
+def test_fetch_stops_at_the_time_limit_and_keeps_what_it_has(monkeypatch):
+    clock = iter([0, 0, 100])  # start, before "rice", before "bread" (100 s later)
+    monkeypatch.setattr(fetch_data.time, "monotonic", lambda: next(clock))
+    df = fetch_data.fetch_food_data(foods=["rice", "bread"], session=FlakySession(set()), pause=0, deadline_s=50)
+    assert list(df["product_name"]) == ["rice"]
+
+
 def test_fetch_raises_when_every_search_fails():
     with pytest.raises(RuntimeError):
         fetch_data.fetch_food_data(foods=["rice", "bread"], session=FlakySession({"rice", "bread"}), pause=0)
@@ -109,6 +119,21 @@ def test_transform_cleans_and_adds_calories_per_gram():
     out = etl_job.transform(raw_products())
     assert list(out["product_name"]) == ["Banana Smoothie", "Apple Pie"]  # null, duplicate and 4000 kcal removed
     assert out.loc[0, "calories_per_gram"] == pytest.approx(0.89)
+
+
+def test_transform_blanks_impossible_nutrients_and_normalises_scores():
+    raw = raw_products().assign(salt=[0.1, 150.0, 150.0, 0.1, 0.1], nutriscore=["A", "z", "z", None, "b"],
+                                nova=[1, 9, 9, 4, 4], code=["1", "2", "2", "3", "4"])
+    out = etl_job.transform(raw)
+    assert out.loc[0, "salt"] == 0.1 and pd.isna(out.loc[1, "salt"])  # 150 g salt per 100 g is impossible
+    assert out.loc[0, "nutriscore"] == "a" and pd.isna(out.loc[1, "nutriscore"])
+    assert pd.isna(out.loc[1, "nova"])
+
+
+def test_transform_drops_unnamed_products():
+    raw = raw_products()
+    raw.loc[0, "product_name"] = "Unknown"
+    assert "Unknown" not in set(etl_job.transform(raw)["product_name"])
 
 
 def test_transform_does_not_change_its_input():
@@ -139,9 +164,10 @@ def test_pipeline_end_to_end_on_local_folder(tmp_path, monkeypatch):
 # ---------- app ----------
 
 def test_search_is_case_insensitive_and_safe_with_symbols():
-    df = pd.DataFrame({"product_name": ["Banana Bread", "Rice (white)", None]})
+    df = pd.DataFrame({"product_name": ["Banana Bread", "Rice (white)", None], "brands": ["Dole", None, "Chobani"]})
     assert len(app.search_foods(df, "BANANA")) == 1
     assert len(app.search_foods(df, "(white")) == 1  # would raise if treated as a regex
+    assert len(app.search_foods(df, "chobani")) == 1  # brand names are searched too
 
 
 def test_app_reads_committed_data_without_aws():

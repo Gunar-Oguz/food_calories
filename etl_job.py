@@ -3,6 +3,10 @@ import storage
 
 # Fat is the densest nutrient at about 9 kcal per gram, so 100 g of food can't exceed ~900 kcal.
 MAX_KCAL_PER_100G = 900
+# Nutrients measured in grams per 100 g can't be negative or above 100 g.
+GRAM_COLS = ["protein", "carbs", "sugar", "fiber", "fat", "saturated_fat", "salt",
+             "calcium", "iron", "potassium", "vitamin_c", "vitamin_d"]
+NUTRISCORE_GRADES = {"a", "b", "c", "d", "e"}
 
 
 def extract():
@@ -14,14 +18,27 @@ def extract():
 
 
 def transform(df):
-    """TRANSFORM: drop missing or impossible calories, remove duplicates, add calories per gram, round."""
+    """TRANSFORM: drop unnamed products and missing or impossible calories, blank out impossible nutrients,
+    normalise scores, remove duplicates, add calories per gram, round."""
     print("TRANSFORM: Processing data...")
     before = len(df)
     df = df.dropna(subset=["calories"])
-    df = df[df["calories"].between(0, MAX_KCAL_PER_100G)]
+    df = df[df["product_name"].str.strip().ne("Unknown")]  # a product nobody can recognise is not useful
+    df = df[df["calories"].between(0, MAX_KCAL_PER_100G)].copy()
+
+    gram_cols = [c for c in GRAM_COLS if c in df.columns]
+    df[gram_cols] = df[gram_cols].where(df[gram_cols].ge(0) & df[gram_cols].le(100))
+    if "nutriscore" in df.columns:
+        grade = df["nutriscore"].astype("string").str.lower()
+        df["nutriscore"] = grade.where(grade.isin(NUTRISCORE_GRADES))
+    if "nova" in df.columns:
+        df["nova"] = df["nova"].where(df["nova"].between(1, 4))
+
     df = df.drop_duplicates(subset=["product_name", "brands"])
+    if "code" in df.columns:
+        df = df[~(df["code"].notna() & df["code"].duplicated())]
     df = df.assign(calories_per_gram=df["calories"] / 100).reset_index(drop=True)
-    df = df.round({"calories": 1, "fat": 2, "sugar": 2, "protein": 2, "calories_per_gram": 3})
+    df = df.round({"calories": 1, "calories_per_gram": 3, **{c: 3 for c in gram_cols}})
     print(f"  ✅ Kept {len(df)} of {before} rows")
     return df
 

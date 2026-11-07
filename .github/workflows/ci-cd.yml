@@ -11,13 +11,16 @@ on:
 
 jobs:
   test:
-    name: Lint and test
+    name: Lint and test (Python ${{ matrix.python }})
     runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        python: ["3.11", "3.14"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: requirements-dev.txt
       - run: pip install -r requirements-dev.txt

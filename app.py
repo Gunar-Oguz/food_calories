@@ -35,7 +35,7 @@ def search_foods(df, query):
 def get_food_data(query="apple"):
     try:
         return search_foods(load_processed_data(), query)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- UI boundary: show any read error instead of crashing the page
         st.error(f"Could not read the data: {e}")
         return pd.DataFrame()
 

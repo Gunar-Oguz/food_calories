@@ -2,7 +2,7 @@
 
 [![CI/CD](https://github.com/Gunar-Oguz/food_calories/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Gunar-Oguz/food_calories/actions/workflows/ci-cd.yml)
 [![Daily data refresh](https://github.com/Gunar-Oguz/food_calories/actions/workflows/refresh-data.yml/badge.svg)](https://github.com/Gunar-Oguz/food_calories/actions/workflows/refresh-data.yml)
-![Python](https://img.shields.io/badge/python-3.11-blue)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.14-blue)
 ![Docker](https://img.shields.io/badge/docker-3%20images-2496ED)
 ![AWS](https://img.shields.io/badge/AWS-S3%20%7C%20ECR%20%7C%20EC2-FF9900)
 
@@ -90,7 +90,7 @@ Two workflows:
 
 **[`ci-cd.yml`](.github/workflows/ci-cd.yml)** runs on every push and pull request:
 
-1. **Lint and test**: `ruff check` and `pytest`
+1. **Lint and test** on Python 3.11 and 3.14: `ruff check` and `pytest`
 2. **Docker**: builds all three images with a build matrix (so a broken Dockerfile fails the PR), and on `main` pushes
    them to Docker Hub tagged with both `latest` and the commit SHA
 3. **AWS deploy**, on only when the repository variable `AWS_DEPLOY=true`: pushes the images to ECR, then connects to
